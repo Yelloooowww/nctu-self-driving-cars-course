@@ -1,0 +1,29 @@
+odom_frame: origin
+base_link_frame: car
+world_frame: origin
+frequency: 10
+sensor_timeout: 0.75
+two_d_mode: true
+transform_time_offset: 0
+publish_tf: false
+
+
+
+odom0: radar_odometry
+odom0_config: [true,  true,  false,
+               false, false, false,
+               false, false, false,
+               false, false, true,
+               false, false, false]
+odom0_differential: true
+
+
+
+
+pose0: gps
+pose0_config: [true,  true,  false,
+               false, false, false,
+               false, false, false,
+               false, false, false,
+               false, false, false]
+pose0_differential: false
