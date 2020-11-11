@@ -1,2 +1,0 @@
-pkg
--DCATKIN_DEVEL_PREFIX=/home/yellow/self-driving-cars-course/SDC_HW4/catkin_ws/devel -DCMAKE_INSTALL_PREFIX=/home/yellow/self-driving-cars-course/SDC_HW4/catkin_ws/install -G Unix Makefiles

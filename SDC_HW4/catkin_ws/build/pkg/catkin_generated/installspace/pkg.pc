@@ -1,8 +1,0 @@
-prefix=/home/yellow/self-driving-cars-course/SDC_HW4/catkin_ws/install
-
-Name: pkg
-Description: Description of pkg
-Version: 0.0.0
-Cflags: 
-Libs: -L${prefix}/lib 
-Requires: roscpp rospy pcl_ros geometry_msgs nav_msgs std_msgs tf2 message_runtime eigen_conversions
