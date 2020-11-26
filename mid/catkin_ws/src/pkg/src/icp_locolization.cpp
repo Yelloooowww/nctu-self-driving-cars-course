@@ -17,6 +17,11 @@
 #include <nav_msgs/Odometry.h>
 #include "math.h"
 
+
+#include <string>
+#include <fstream>
+#include <sstream>
+
 using namespace ros;
 using namespace std;
 
@@ -33,14 +38,17 @@ private:
   tf::TransformListener listener;
   tf::TransformBroadcaster broadcaster;
 
+  ofstream outFile;
+  int cb_time=0;
+
+
+
 public:
   icp_locolization();
   void cb_lidar_scan(const sensor_msgs::PointCloud2 &msg);
   void cb_gps(const geometry_msgs::PoseStamped &msg);
   Eigen::Matrix4f get_initial_guess();
   Eigen::Matrix4f get_transfrom(std::string link_name);
-
-  int cb_time=0;
 };
 
 icp_locolization::icp_locolization(){
@@ -56,7 +64,7 @@ icp_locolization::icp_locolization(){
   pcl::PCLPointCloud2::Ptr map_cloud2 (new pcl::PCLPointCloud2 ());
   pcl::toPCLPointCloud2(*load_map, *map_cloud2);
   sor_map.setInputCloud (map_cloud2);
-  sor_map.setLeafSize (0.75f, 0.75f, 0.75f);
+  sor_map.setLeafSize (0.3f, 0.3f, 0.3f);
   sor_map.filter (*map_cloud2);
   pcl::fromPCLPointCloud2(*map_cloud2, *load_map);
   pcl::toROSMsg(*load_map, map_cloud);
@@ -74,6 +82,10 @@ icp_locolization::icp_locolization(){
   std::cout << "initial guess get" << std::endl;
   std::cout << initial_guess << std::endl;
 
+
+  outFile.open("Q1result.csv", ios::out);
+  outFile <<"id,x,y,z,yaw,pitch,roll"<<endl;
+
   printf("init done \n");
 }
 
@@ -84,7 +96,7 @@ Eigen::Matrix4f icp_locolization::get_initial_guess(){
   geometry_msgs::PointStampedConstPtr gps_point;
   gps_point = ros::topic::waitForMessage<geometry_msgs::PointStamped>("/gps", nh);
 
-  double yaw=3.14*3/4 ;//rad  #mid 1
+  double yaw=3.14*3/4+5*3.14/180 ;//rad  #mid 1
   trans << cos(yaw), -sin(yaw), 0,  (*gps_point).point.x,
            sin(yaw), cos(yaw),  0,  (*gps_point).point.y,
 			     0,        0,         1,  (*gps_point).point.z,
@@ -139,9 +151,11 @@ void icp_locolization::cb_lidar_scan(const sensor_msgs::PointCloud2 &msg)
   pcl::toPCLPointCloud2(*bag_cloud, *bag_cloud2);
   sor.setInputCloud (bag_cloud2);
   sor.setFilterFieldName ("y");
-  sor.setFilterLimits (-20, 20);
+  sor.setFilterLimits (-5, 20);
+  sor.setFilterFieldName ("z");
+  sor.setFilterLimits (0.1, 2.5);
   sor.setFilterFieldName ("x");
-  sor.setFilterLimits (-15, 15);
+  sor.setFilterLimits (-5, 50);
   sor.setLeafSize (0.5f, 0.5f, 0.5f);
   sor.filter (*bag_cloud2);
   pcl::fromPCLPointCloud2(*bag_cloud2, *bag_cloud);
@@ -157,10 +171,10 @@ void icp_locolization::cb_lidar_scan(const sensor_msgs::PointCloud2 &msg)
 
 
 
-  icp.setMaximumIterations (20);
+  icp.setMaximumIterations (10);
   icp.setTransformationEpsilon (1e-6);
   icp.setMaxCorrespondenceDistance (5);
-  icp.setEuclideanFitnessEpsilon (0.0001);
+  icp.setEuclideanFitnessEpsilon (0.00000001);
   icp.setRANSACOutlierRejectionThreshold (0.01);
   pcl::PointCloud<pcl::PointXYZI> Final;
   icp.align(Final, initial_guess);
@@ -223,7 +237,23 @@ void icp_locolization::cb_lidar_scan(const sensor_msgs::PointCloud2 &msg)
   odom.pose.pose.orientation.w = tfq2[3];
   pub_result_odom.publish(odom);
 
-  printf("cb_time=%d\n",cb_time);
+
+
+  float linearposx=odom.pose.pose.position.x;
+  float linearposy=odom.pose.pose.position.y;
+  double quatx= odom.pose.pose.orientation.x;
+  double quaty= odom.pose.pose.orientation.y;
+  double quatz= odom.pose.pose.orientation.z;
+  double quatw= odom.pose.pose.orientation.w;
+
+  tf::Quaternion qq(quatx, quaty, quatz, quatw);
+  tf::Matrix3x3 mm(qq);
+  double roll, pitch, yaw;
+  mm.getRPY(roll, pitch, yaw);
+  cout<<"roll="<<roll<<",pitch="<< pitch<<"yaw="<< yaw<<endl;
+
+
+  outFile << cb_time <<','<< odom.pose.pose.position.x << ',' << odom.pose.pose.position.y << ',' << odom.pose.pose.position.z <<','<< yaw << ',' << pitch << ',' << roll <<endl;
 
 }
 
@@ -234,4 +264,5 @@ int main (int argc, char** argv)
   ros::init(argc, argv, "icp_locolization");
   icp_locolization iiiiiiiiiiiiiiiiiiiiiicp;
   ros::spin();
+
 }
