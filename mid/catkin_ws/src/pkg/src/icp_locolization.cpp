@@ -59,28 +59,24 @@ icp_locolization::icp_locolization(){
     PCL_ERROR ("Couldn't read file map.pcd \n");
     exit(0);
   }
-  //=======voxel grid filter=====================
-  pcl::VoxelGrid<pcl::PCLPointCloud2> sor_map;
-  pcl::PCLPointCloud2::Ptr map_cloud2 (new pcl::PCLPointCloud2 ());
-  pcl::toPCLPointCloud2(*load_map, *map_cloud2);
-  sor_map.setInputCloud (map_cloud2);
-  sor_map.setLeafSize (0.3f, 0.3f, 0.3f);
-  sor_map.filter (*map_cloud2);
-  pcl::fromPCLPointCloud2(*map_cloud2, *load_map);
   pcl::toROSMsg(*load_map, map_cloud);
 
 
-  sub_lidar_scan = nh.subscribe("lidar_points", 10, &icp_locolization::cb_lidar_scan, this);
-  pub_pc_after_icp = nh.advertise<sensor_msgs::PointCloud2>("pc_after_icp", 10);
-  pub_result_odom = nh.advertise<nav_msgs::Odometry>("result_odom", 10);
-  pub_map = nh.advertise<sensor_msgs::PointCloud2>("load_map", 10);
+  sub_lidar_scan = nh.subscribe("lidar_points", 1, &icp_locolization::cb_lidar_scan, this);
+  pub_pc_after_icp = nh.advertise<sensor_msgs::PointCloud2>("pc_after_icp", 1);
+  pub_result_odom = nh.advertise<nav_msgs::Odometry>("result_odom", 1);
+  pub_map = nh.advertise<sensor_msgs::PointCloud2>("load_map", 1);
 
 
-  //wait for gps
-  std::cout << "waiting for gps" << std::endl;
-  initial_guess = get_initial_guess();
-  std::cout << "initial guess get" << std::endl;
-  std::cout << initial_guess << std::endl;
+  int init_x= -285.456721951;
+  int init_y= 225.77162962;
+  int init_z= -12.4146628257;
+  double yaw=2.454 ;//rad  #mid 1
+  initial_guess<< cos(yaw), -sin(yaw), 0,  init_x,
+                  sin(yaw), cos(yaw),  0,  init_y,
+			            0,        0,         1,  init_z,
+			            0,        0,         0,  1;
+
 
 
   outFile.open("Q1result.csv", ios::out);
@@ -90,20 +86,6 @@ icp_locolization::icp_locolization(){
 }
 
 
-Eigen::Matrix4f icp_locolization::get_initial_guess(){
-
-  Eigen::Matrix4f trans;
-  geometry_msgs::PointStampedConstPtr gps_point;
-  gps_point = ros::topic::waitForMessage<geometry_msgs::PointStamped>("/gps", nh);
-
-  double yaw=3.14*3/4+5*3.14/180 ;//rad  #mid 1
-  trans << cos(yaw), -sin(yaw), 0,  (*gps_point).point.x,
-           sin(yaw), cos(yaw),  0,  (*gps_point).point.y,
-			     0,        0,         1,  (*gps_point).point.z,
-			     0,        0,         0,  1;
-
-  return trans;
-}
 
 
 Eigen::Matrix4f icp_locolization::get_transfrom(std::string link_name){
@@ -150,16 +132,36 @@ void icp_locolization::cb_lidar_scan(const sensor_msgs::PointCloud2 &msg)
   pcl::PCLPointCloud2::Ptr bag_cloud2 (new pcl::PCLPointCloud2 ());
   pcl::toPCLPointCloud2(*bag_cloud, *bag_cloud2);
   sor.setInputCloud (bag_cloud2);
-  sor.setFilterFieldName ("y");
-  sor.setFilterLimits (-5, 20);
-  sor.setFilterFieldName ("z");
-  sor.setFilterLimits (0.1, 2.5);
   sor.setFilterFieldName ("x");
-  sor.setFilterLimits (-5, 50);
-  sor.setLeafSize (0.5f, 0.5f, 0.5f);
+  sor.setFilterLimits (-5, 30);
+  sor.setLeafSize (0.005f, 0.005f, 0.005f);
   sor.filter (*bag_cloud2);
   pcl::fromPCLPointCloud2(*bag_cloud2, *bag_cloud);
-  cout<<"voxel grid filter: "<<bag_cloud->points.size()<<endl;
+  cout<<"voxel grid filter1: "<<bag_cloud->points.size()<<endl;
+
+  //=======voxel grid filter=====================
+  pcl::VoxelGrid<pcl::PCLPointCloud2> sor2;
+  pcl::PCLPointCloud2::Ptr bag_cloud3 (new pcl::PCLPointCloud2 ());
+  pcl::toPCLPointCloud2(*bag_cloud, *bag_cloud3);
+  sor2.setInputCloud (bag_cloud3);
+  sor2.setFilterFieldName ("y");
+  sor2.setFilterLimits (-7.5, 15);
+  sor2.setLeafSize (0.005f, 0.005f, 0.005f);
+  sor2.filter (*bag_cloud3);
+  pcl::fromPCLPointCloud2(*bag_cloud3, *bag_cloud);
+  cout<<"voxel grid filter2: "<<bag_cloud->points.size()<<endl;
+
+  //=======voxel grid filter=====================
+  pcl::VoxelGrid<pcl::PCLPointCloud2> sor3;
+  pcl::PCLPointCloud2::Ptr bag_cloud4 (new pcl::PCLPointCloud2 ());
+  pcl::toPCLPointCloud2(*bag_cloud, *bag_cloud4);
+  sor3.setInputCloud (bag_cloud4);
+  sor3.setFilterFieldName ("z");
+  sor3.setFilterLimits (0.3, 2.3);
+  sor3.setLeafSize (0.005f, 0.005f, 0.005f);
+  sor3.filter (*bag_cloud4);
+  pcl::fromPCLPointCloud2(*bag_cloud4, *bag_cloud);
+  cout<<"voxel grid filter3: "<<bag_cloud->points.size()<<endl;
 
 
 
@@ -171,11 +173,11 @@ void icp_locolization::cb_lidar_scan(const sensor_msgs::PointCloud2 &msg)
 
 
 
-  icp.setMaximumIterations (10);
-  icp.setTransformationEpsilon (1e-6);
-  icp.setMaxCorrespondenceDistance (5);
-  icp.setEuclideanFitnessEpsilon (0.00000001);
-  icp.setRANSACOutlierRejectionThreshold (0.01);
+  icp.setMaximumIterations (2000);
+  icp.setTransformationEpsilon (1e-9);
+  icp.setMaxCorrespondenceDistance (1);
+  icp.setEuclideanFitnessEpsilon (1e-4);
+  icp.setRANSACOutlierRejectionThreshold (0.05);
   pcl::PointCloud<pcl::PointXYZI> Final;
   icp.align(Final, initial_guess);
 
@@ -250,11 +252,14 @@ void icp_locolization::cb_lidar_scan(const sensor_msgs::PointCloud2 &msg)
   tf::Matrix3x3 mm(qq);
   double roll, pitch, yaw;
   mm.getRPY(roll, pitch, yaw);
-  cout<<"roll="<<roll<<",pitch="<< pitch<<"yaw="<< yaw<<endl;
 
 
+  cout<<"cb_time="<<cb_time<<endl;
   outFile << cb_time <<','<< odom.pose.pose.position.x << ',' << odom.pose.pose.position.y << ',' << odom.pose.pose.position.z <<','<< yaw << ',' << pitch << ',' << roll <<endl;
-
+  if(cb_time==201){
+    cout<<"close file"<<endl;
+    outFile.close();
+  }
 }
 
 
