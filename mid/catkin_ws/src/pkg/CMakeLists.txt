@@ -18,7 +18,6 @@ find_package(catkin REQUIRED COMPONENTS
   tf2
   tf_conversions
   eigen_conversions
-
 )
 
 ## System dependencies are found with CMake's conventions
@@ -235,16 +234,20 @@ include_directories(
 
 
 
-add_executable(pcl_load src/pcl_load.cpp )
-add_dependencies(pcl_load ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencpp)
-target_link_libraries(pcl_load ${catkin_LIBRARIES})
 
 
-add_executable(downsample src/downsample.cpp )
-add_dependencies(downsample ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencpp)
-target_link_libraries(downsample ${catkin_LIBRARIES})
 
 
-add_executable(icp_locolization src/icp_locolization.cpp )
-add_dependencies(icp_locolization ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencpp)
-target_link_libraries(icp_locolization ${catkin_LIBRARIES})
+
+
+add_executable(icp_locolization1 src/icp_locolization1.cpp )
+add_dependencies(icp_locolization1 ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencpp)
+target_link_libraries(icp_locolization1 ${catkin_LIBRARIES})
+
+add_executable(icp_locolization2 src/icp_locolization2.cpp )
+add_dependencies(icp_locolization2 ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencpp)
+target_link_libraries(icp_locolization2 ${catkin_LIBRARIES})
+
+add_executable(icp_locolization3 src/icp_locolization3.cpp )
+add_dependencies(icp_locolization3 ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencpp)
+target_link_libraries(icp_locolization3 ${catkin_LIBRARIES})

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<launch>
+    <node pkg="pkg" type="icp_locolization1" name="icp_locolization1" output="screen"></node>
+</launch>
