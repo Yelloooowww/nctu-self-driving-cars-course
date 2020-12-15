@@ -53,6 +53,7 @@ CATKIN_IGNORE
 
 *.bag
 *.pcd
+*.json
 *.zip
 
 argoverse-tracking/
