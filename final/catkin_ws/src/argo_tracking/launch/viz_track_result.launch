@@ -1,10 +1,10 @@
 <launch>
     <node pkg="rviz"    type="rviz" name="rviz" args="-d $(find argo_tracking)/rviz_config/tracking_result_viz.rviz"/>
 
-    <arg name="scene_name"              default="c6911883-1843-3727-8eaa-41dc8cda8993"/>
-    <arg name="tracking_result_folder"  default="/home/yellow/argoverse_cbgs_kf_tracker/temp_files/val-split-track-preds-maxage15-minhits5-conf0.3"/>
-    <arg name="argo_data_folder"        default="/home/yellow/argodataset/argoverse-tracking/sample"/>
-    <arg name="detection_folder"        default="/home/yellow/argoverse_cbgs_kf_tracker/argoverse_detections_2020/training"/>
+    <arg name="scene_name"              default="028d5cb1-f74d-366c-85ad-84fde69b0fd3"/>
+    <arg name="tracking_result_folder"  default="/home/yellow/self-driving-cars-course/final/argoverse_cbgs_kf_tracker/my_result_files/test-split-track-preds-maxage15-minhits5-conf0.3"/>
+    <arg name="argo_data_folder"        default="/home/yellow/self-driving-cars-course/final/argoverse-tracking/test"/>
+    <arg name="detection_folder"        default="/home/yellow/self-driving-cars-course/final/argoverse_detections_2020/testing"/>
 
 
     <node pkg ="argo_tracking"   type="viz_track_result" name="viz_result"   output="screen">
