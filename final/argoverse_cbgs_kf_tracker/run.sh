@@ -3,7 +3,7 @@ POSE_DIR="/home/yellow/self-driving-cars-course/final/argoverse-tracking/test" #
 SPLIT="test" # should be either 'val' or 'test'
 TRACK_DUMP_DIR='my_result_files'
 
-MAX_AGE=15
+MAX_AGE=19
 MIN_HITS=5
 MIN_CONF=0.3
 
@@ -20,5 +20,5 @@ python3 run_ab3dmot.py --dets_dataroot $DETECTIONS_DATAROOT --pose_dir $POSE_DIR
 
 
 echo "-----generate submission file-----"
-zip -r track_result.zip /home/yellow/self-driving-cars-course/final/argoverse_cbgs_kf_tracker/my_result_files/test-split-track-preds-maxage15-minhits5-conf0.3/
+zip -r track_result.zip /home/yellow/self-driving-cars-course/final/argoverse_cbgs_kf_tracker/my_result_files/test-split-track-preds-maxage19-minhits5-conf0.3/
 echo "-----Finish-----"
