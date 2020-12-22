@@ -23,7 +23,6 @@ from transform_utils import (
     rotmat2d
 )
 from json_utils import read_json_file, save_json_dict
-# from argoverse.evaluation.competition_util import generate_tracking_zip
 
 
 def check_mkdir(dirpath):
@@ -46,10 +45,8 @@ uuid_gen = UUIDGeneration()
 def yaw_from_bbox_corners(det_corners: np.ndarray) -> float:
     """
     Use basic trigonometry on cuboid to get orientation angle.
-
         Args:
         -   det_corners: corners of bounding box
-
         Returns:
         -   yaw
     """
@@ -63,20 +60,34 @@ def yaw_from_bbox_corners(det_corners: np.ndarray) -> float:
 
 
 def run_ab3dmot(
+    # classname: str,
+    # pose_dir: str,
+    # dets_dump_dir: str,
+    # tracks_dump_dir: str,
+    # max_age: int = 3,
+    # min_hits: int = 1,
+    # min_conf: float = 0.3
+
     classname: str,
     pose_dir: str,
     dets_dump_dir: str,
     tracks_dump_dir: str,
     max_age: int = 3,
     min_hits: int = 1,
-    min_conf: float = 0.3
+    min_conf: float = 0.3,
+    match_algorithm: str = 'h',
+    match_threshold: float = 4,
+    match_distance: float = 'iou',
+    p: np.ndarray = np.eye(10),
+    thr_estimate: float = 0.8,
+    thr_prune: float = 0.1,
+    ps: float = 0.9
+
     ) -> None:
     """
     #path to argoverse tracking dataset test set, we will add our predicted labels into per_sweep_annotations_amodal/
     #inside this folder
-
     Filtering occurs in the city frame, not the egovehicle frame.
-
         Args:
         -   classname: string, either 'VEHICLE' or 'PEDESTRIAN'
         -   pose_dir: string
@@ -84,7 +95,6 @@ def run_ab3dmot(
         -   tracks_dump_dir: string
         -   max_age: integer
         -   min_hits: integer
-
         Returns:
         -   None
     """
@@ -97,7 +107,8 @@ def run_ab3dmot(
         lidar_timestamps = [ int(file.split(".")[0].split("_")[-1]) for file in lis]
         lidar_timestamps.sort()
         previous_frame_bbox = []
-        ab3dmot = AB3DMOT(max_age=max_age,min_hits=min_hits)
+        # ab3dmot = AB3DMOT(max_age=max_age,min_hits=min_hits)
+        ab3dmot = AB3DMOT(thr_estimate=0.8, thr_prune=0.9, ps=0.1)
         print(labels_folder)
         tracked_labels_copy = []
         for j, current_lidar_timestamp in enumerate(lidar_timestamps):
@@ -111,6 +122,9 @@ def run_ab3dmot(
             city_SE3_egovehicle = dl.get_city_to_egovehicle_se3(log_id, current_lidar_timestamp)
             egovehicle_SE3_city = city_SE3_egovehicle.inverse()
             transformed_labels = []
+
+            conf = []
+
             for l_idx, l in enumerate(dets):
 
                 if l['label_class'] != classname:
@@ -124,7 +138,7 @@ def run_ab3dmot(
 
                 transforms += [city_SE3_egovehicle]
                 if city_SE3_egovehicle is None:
-                    print('Was None!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+                    print('Was None')
 
                 # convert detection from egovehicle frame to city frame
                 det_corners_city_fr = city_SE3_egovehicle.transform_point_cloud(det_corners_egovehicle_fr)
@@ -132,19 +146,37 @@ def run_ab3dmot(
 
                 yaw = yaw_from_bbox_corners(det_corners_city_fr)
                 transformed_labels += [ [ego_xyz[0], ego_xyz[1], ego_xyz[2], yaw, l["length"],l["width"],l["height"]] ]
+                conf += [l["score"]]
 
             if len(transformed_labels) > 0:
                 transformed_labels = np.array(transformed_labels)
             else:
                 transformed_labels = np.empty((0,7))
 
+            # dets_all = {
+            #     "dets":transformed_labels,
+            #     "info": np.zeros(transformed_labels.shape)
+            # }
+
+            # perform measurement update in the city frame.
+
             dets_all = {
-                "dets":transformed_labels,
-                "info": np.zeros(transformed_labels.shape)
+                "dets": transformed_labels,
+                "info": np.zeros(transformed_labels.shape),
+                "conf": conf
             }
 
             # perform measurement update in the city frame.
-            dets_with_object_id = ab3dmot.update(dets_all)
+            dets_with_object_id = ab3dmot.update(
+                dets_all,
+                match_distance,
+                match_threshold,
+                match_algorithm,
+                p
+            )
+
+
+            # dets_with_object_id = ab3dmot.update(dets_all)
 
             tracked_labels = []
             for det in dets_with_object_id:
@@ -200,7 +232,6 @@ if __name__ == '__main__':
     Note:
         "max_age" denotes maximum allowed lifespan of a track (in timesteps of 100 ms)
         since it was last updated with an associated measurement.
-
     Argparse args:
     -   split: dataset split
     -   max_age: max allowed track age since last measurement update
