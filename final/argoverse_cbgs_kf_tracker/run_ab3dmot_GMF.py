@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-#!/usr/bin/env python3
-
 import time
 import shutil
 
@@ -177,14 +175,15 @@ def run_ab3dmot(
                 det_corners_city_fr = city_SE3_egovehicle.transform_point_cloud(det_corners_egovehicle_fr)
                 ego_xyz = np.mean(det_corners_city_fr, axis=0)
 
-                # Check the driveable/roi area
-                #da = am.remove_non_driveable_area_points(np.array([ego_xyz]), city_name=city_name)
-                # if len(da) == 0 and l['label_class'] == 'VEHICLE':
-                #     continue
 
-                # roi = am.remove_non_roi_points(np.array([ego_xyz]), city_name=city_name)
-                # if len(roi) == 0:
-                #     continue
+                # Check the driveable/roi area
+                da = am.remove_non_driveable_area_points(np.array([ego_xyz]), city_name=city_name)
+                if len(da) == 0 and l['label_class'] == 'VEHICLE':
+                    continue
+
+                roi = am.remove_non_roi_points(np.array([ego_xyz]), city_name=city_name)
+                if len(roi) == 0:
+                    continue
 
                 yaw = yaw_from_bbox_corners(det_corners_city_fr)
                 transformed_labels += [ [ego_xyz[0], ego_xyz[1], ego_xyz[2], yaw, l["length"],l["width"],l["height"]]]
@@ -258,78 +257,13 @@ def run_ab3dmot(
 
 
 if __name__ == '__main__':
-    # """
-    # Run the tracker. The tracking is performed in the city frame, but the
-    # tracks will be dumped into the egovehicle frame for evaluation.
-    # 2d IoU only is used for data association.
-    # Note:
-    #     "max_age" denotes maximum allowed lifespan of a track (in timesteps of 100 ms)
-    #     since it was last updated with an associated measurement.
-    # Argparse args:
-    # -   split: dataset split
-    # -   max_age: max allowed track age since last measurement update
-    # -   min_hits: minimum number of required hits for track birth
-    # -   pose_dir: should be path to raw log files e.g.
-    #         '/Users/johnlamb/Downloads/ARGOVERSE-COMPETITION/test' or
-    #         '/Users/johnlamb/Downloads/ARGOVERSE-COMPETITION/val/argoverse-tracking/val'
-    # -   dets_dataroot: should be path to 3d detections e.g.
-    #         '/Users/johnlamb/Downloads/argoverse_detections_2020'
-    # -   tracks_dump_dir: where to dump the generated tracks
-    # """
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("--split", type=str, required=True, help="val or test")
-    # parser.add_argument("--max_age", type=int, default=15,
-    #         help="max allowed track age since last measurement update")
-    # parser.add_argument("--min_hits", type=int, default=5,
-    #     help="minimum number of required hits for track birth")
-    #
-    # parser.add_argument("--dets_dataroot", type=str,
-    #     required=True, help="path to 3d detections")
-    #
-    # parser.add_argument("--pose_dir", type=str,
-    #     required=True, help="path to raw log data (including pose data) for validation or test set")
-    #
-    # parser.add_argument("--tracks_dump_dir", type=str,
-    #     default='temp_files',
-    #     help="path to dump generated tracks (as .json files)")
-    # parser.add_argument("--min_conf", type=float,
-    #     default=0.3,
-    #     help="minimum allowed confidence for 3d detections to be considered valid")
-    #
-    # args = parser.parse_args()
-    # # tracks will be dumped into a subfolder of this name
-    # save_dirname = f'{args.split}-split-track-preds'
-    # save_dirname += f'-maxage{args.max_age}-minhits{args.min_hits}-conf{args.min_conf}'
-    #
-    # if args.split == 'train':
-    #     args.dets_dataroot += '/training'
-    # elif args.split == 'val':
-    #     args.dets_dataroot += '/validation'
-    # elif args.split == 'test':
-    #     args.dets_dataroot += '/testing'
-    #
-    # args.tracks_dump_dir = f'{args.tracks_dump_dir}/{save_dirname}'
-
     #path
-    split = 'val'
-    #path_dataset = "/media/sda1/argoverse-tracking"
-    # path_dataset = "../../Data/argoverse"
     path_detections = f"/home/yellow/self-driving-cars-course/final/argoverse_detections_2020/validation"
     path_data = f"/home/yellow/self-driving-cars-course/final/argoverse-tracking/val"
-    path_results = f"/home/yellow/self-driving-cars-course/final/argoverse_cbgs_kf_tracker/results/results_tracking_{split}_cbgs"
+    path_results = f"/home/yellow/self-driving-cars-course/final/argoverse_cbgs_kf_tracker/results/results_tracking_val_cbgs"
 
-    min_conf = 0.3
-    #match_threshold = 10
-    match_distance = 'iou'
 
-    p_pos_mult, p_vel_mult = 1, 1
-    p = np.eye(10)
-    p[0:7,0:7] *= p_pos_mult
-    p[7:,7:] *= p_vel_mult
-
-    thr_prune = 0.01
-
-    thr_estimate = 0.55
+    thr_estimate = 0.5
     ps = 0.875
 
     # Run tracker over vehicle detections separately from ped. detections
@@ -341,10 +275,10 @@ if __name__ == '__main__':
                 min_conf=min_conf,
                 match_algorithm ='h',
                 match_threshold = match_threshold,
-                match_distance = match_distance,
-                p = p,
+                match_distance = 'iou',
+                p = None,
                 thr_estimate = thr_estimate,
-                thr_prune=thr_prune,
+                thr_prune = 0.01,
                 ps = ps
             )
         if classname == 'PEDESTRIAN':
@@ -354,9 +288,9 @@ if __name__ == '__main__':
                 min_conf=min_conf,
                 match_algorithm ='h',
                 match_threshold = match_threshold,
-                match_distance = match_distance,
-                p = p,
+                match_distance = 'iou',
+                p = None,
                 thr_estimate = thr_estimate,
-                thr_prune=thr_prune,
+                thr_prune = 0.01,
                 ps = ps
             )

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#!/usr/bin/env python3
+
+import time
+import shutil
 
 import argparse
 import copy
@@ -10,7 +14,36 @@ import pdb
 from tqdm import tqdm
 import uuid
 
-from ab3dmot import AB3DMOT
+
+import argoverse
+from argoverse.data_loading.object_label_record import json_label_dict_to_obj_record
+from argoverse.data_loading.simple_track_dataloader import SimpleArgoverseTrackingDataLoader
+from argoverse.utils.se2 import SE2
+from transform_utils import (
+    yaw_to_quaternion3d,
+    se2_to_yaw,
+    get_B_SE2_A,
+    rotmat2d
+)
+from json_utils import read_json_file, save_json_dict
+
+from argoverse.evaluation.competition_util import generate_tracking_zip
+from argoverse.evaluation.eval_tracking import eval_tracks
+
+from argoverse.map_representation.map_api import ArgoverseMap
+
+
+import argparse
+import copy
+import numpy as np
+import os
+from pathlib import Path
+import pdb
+
+from tqdm import tqdm
+import uuid
+
+from ab3dmot_GMF import AB3DMOT
 
 import argoverse
 from argoverse.data_loading.object_label_record import json_label_dict_to_obj_record
@@ -60,14 +93,23 @@ def yaw_from_bbox_corners(det_corners: np.ndarray) -> float:
 
 
 def run_ab3dmot(
+
     classname: str,
     pose_dir: str,
     dets_dump_dir: str,
     tracks_dump_dir: str,
     max_age: int = 3,
     min_hits: int = 1,
-    min_conf: float = 0.3
-    ) -> None:
+    min_conf: float = 0.3,
+    match_algorithm: str = 'h',
+    match_threshold: float = 4,
+    match_distance: float = 'iou',
+    p: np.ndarray = np.eye(10),
+    thr_estimate: float = 0.8,
+    thr_prune: float = 0.1,
+    ps: float = 0.9
+
+) -> None:
     """
     #path to argoverse tracking dataset test set, we will add our predicted labels into per_sweep_annotations_amodal/
     #inside this folder
@@ -84,20 +126,28 @@ def run_ab3dmot(
     """
     dl = SimpleArgoverseTrackingDataLoader(data_dir=pose_dir, labels_dir=dets_dump_dir)
 
+    am = ArgoverseMap()
+
     for log_id in tqdm(dl.sdb.get_valid_logs()):
+
         print(log_id)
+
+        city_name = dl.get_city_name(log_id)
+
         labels_folder = dets_dump_dir + "/" + log_id + "/per_sweep_annotations_amodal/"
         lis = os.listdir(labels_folder)
         lidar_timestamps = [ int(file.split(".")[0].split("_")[-1]) for file in lis]
         lidar_timestamps.sort()
         previous_frame_bbox = []
-        ab3dmot = AB3DMOT(max_age=max_age,min_hits=min_hits)
+
+        ab3dmot = AB3DMOT(thr_estimate=thr_estimate, thr_prune=thr_prune, ps=ps)
+
         print(labels_folder)
         tracked_labels_copy = []
+
         for j, current_lidar_timestamp in enumerate(lidar_timestamps):
-            #print(current_lidar_timestamp)
+
             dets = dl.get_labels_at_lidar_timestamp(log_id, current_lidar_timestamp)
-            #print(f'There are {len(dets)} detections!')
 
             dets_copy = dets
             transforms = []
@@ -105,6 +155,8 @@ def run_ab3dmot(
             city_SE3_egovehicle = dl.get_city_to_egovehicle_se3(log_id, current_lidar_timestamp)
             egovehicle_SE3_city = city_SE3_egovehicle.inverse()
             transformed_labels = []
+            conf = []
+
             for l_idx, l in enumerate(dets):
 
                 if l['label_class'] != classname:
@@ -113,6 +165,7 @@ def run_ab3dmot(
                 if l["score"] < min_conf:
                     # print('Skipping det with confidence ', l["score"])
                     continue
+
                 det_obj = json_label_dict_to_obj_record(l)
                 det_corners_egovehicle_fr = det_obj.as_3d_bbox()
 
@@ -124,8 +177,18 @@ def run_ab3dmot(
                 det_corners_city_fr = city_SE3_egovehicle.transform_point_cloud(det_corners_egovehicle_fr)
                 ego_xyz = np.mean(det_corners_city_fr, axis=0)
 
+                # Check the driveable/roi area
+                #da = am.remove_non_driveable_area_points(np.array([ego_xyz]), city_name=city_name)
+                # if len(da) == 0 and l['label_class'] == 'VEHICLE':
+                #     continue
+
+                # roi = am.remove_non_roi_points(np.array([ego_xyz]), city_name=city_name)
+                # if len(roi) == 0:
+                #     continue
+
                 yaw = yaw_from_bbox_corners(det_corners_city_fr)
-                transformed_labels += [ [ego_xyz[0], ego_xyz[1], ego_xyz[2], yaw, l["length"],l["width"],l["height"]] ]
+                transformed_labels += [ [ego_xyz[0], ego_xyz[1], ego_xyz[2], yaw, l["length"],l["width"],l["height"]]]
+                conf += [l["score"]]
 
             if len(transformed_labels) > 0:
                 transformed_labels = np.array(transformed_labels)
@@ -133,12 +196,19 @@ def run_ab3dmot(
                 transformed_labels = np.empty((0,7))
 
             dets_all = {
-                "dets":transformed_labels,
-                "info": np.zeros(transformed_labels.shape)
+                "dets": transformed_labels,
+                "info": np.zeros(transformed_labels.shape),
+                "conf": conf
             }
 
             # perform measurement update in the city frame.
-            dets_with_object_id = ab3dmot.update(dets_all)
+            dets_with_object_id = ab3dmot.update(
+                dets_all,
+                match_distance,
+                match_threshold,
+                match_algorithm,
+                p
+            )
 
             tracked_labels = []
             for det in dets_with_object_id:
@@ -160,6 +230,7 @@ def run_ab3dmot(
 
                 ego_yaw_obj = se2_to_yaw(egovehicle_se2_object)
                 qx,qy,qz,qw = yaw_to_quaternion3d(ego_yaw_obj)
+
                 tracked_labels.append({
                 "center": {"x": xyz_ego[0], "y": xyz_ego[1], "z": xyz_ego[2]},
                 "rotation": {"x": qx , "y": qy, "z": qz , "w": qw},
@@ -177,6 +248,7 @@ def run_ab3dmot(
             check_mkdir(label_dir)
             json_fname = f"tracked_object_labels_{current_lidar_timestamp}.json"
             json_fpath = os.path.join(label_dir, json_fname)
+
             if Path(json_fpath).exists():
                 # accumulate tracks of another class together
                 prev_tracked_labels = read_json_file(json_fpath)
@@ -186,67 +258,105 @@ def run_ab3dmot(
 
 
 if __name__ == '__main__':
-    """
-    Run the tracker. The tracking is performed in the city frame, but the
-    tracks will be dumped into the egovehicle frame for evaluation.
-    2d IoU only is used for data association.
+    # """
+    # Run the tracker. The tracking is performed in the city frame, but the
+    # tracks will be dumped into the egovehicle frame for evaluation.
+    # 2d IoU only is used for data association.
+    # Note:
+    #     "max_age" denotes maximum allowed lifespan of a track (in timesteps of 100 ms)
+    #     since it was last updated with an associated measurement.
+    # Argparse args:
+    # -   split: dataset split
+    # -   max_age: max allowed track age since last measurement update
+    # -   min_hits: minimum number of required hits for track birth
+    # -   pose_dir: should be path to raw log files e.g.
+    #         '/Users/johnlamb/Downloads/ARGOVERSE-COMPETITION/test' or
+    #         '/Users/johnlamb/Downloads/ARGOVERSE-COMPETITION/val/argoverse-tracking/val'
+    # -   dets_dataroot: should be path to 3d detections e.g.
+    #         '/Users/johnlamb/Downloads/argoverse_detections_2020'
+    # -   tracks_dump_dir: where to dump the generated tracks
+    # """
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("--split", type=str, required=True, help="val or test")
+    # parser.add_argument("--max_age", type=int, default=15,
+    #         help="max allowed track age since last measurement update")
+    # parser.add_argument("--min_hits", type=int, default=5,
+    #     help="minimum number of required hits for track birth")
+    #
+    # parser.add_argument("--dets_dataroot", type=str,
+    #     required=True, help="path to 3d detections")
+    #
+    # parser.add_argument("--pose_dir", type=str,
+    #     required=True, help="path to raw log data (including pose data) for validation or test set")
+    #
+    # parser.add_argument("--tracks_dump_dir", type=str,
+    #     default='temp_files',
+    #     help="path to dump generated tracks (as .json files)")
+    # parser.add_argument("--min_conf", type=float,
+    #     default=0.3,
+    #     help="minimum allowed confidence for 3d detections to be considered valid")
+    #
+    # args = parser.parse_args()
+    # # tracks will be dumped into a subfolder of this name
+    # save_dirname = f'{args.split}-split-track-preds'
+    # save_dirname += f'-maxage{args.max_age}-minhits{args.min_hits}-conf{args.min_conf}'
+    #
+    # if args.split == 'train':
+    #     args.dets_dataroot += '/training'
+    # elif args.split == 'val':
+    #     args.dets_dataroot += '/validation'
+    # elif args.split == 'test':
+    #     args.dets_dataroot += '/testing'
+    #
+    # args.tracks_dump_dir = f'{args.tracks_dump_dir}/{save_dirname}'
 
-    Note:
-        "max_age" denotes maximum allowed lifespan of a track (in timesteps of 100 ms)
-        since it was last updated with an associated measurement.
-    Argparse args:
-    -   split: dataset split
-    -   max_age: max allowed track age since last measurement update
-    -   min_hits: minimum number of required hits for track birth
-    -   pose_dir: should be path to raw log files e.g.
-            '/Users/johnlamb/Downloads/ARGOVERSE-COMPETITION/test' or
-            '/Users/johnlamb/Downloads/ARGOVERSE-COMPETITION/val/argoverse-tracking/val'
-    -   dets_dataroot: should be path to 3d detections e.g.
-            '/Users/johnlamb/Downloads/argoverse_detections_2020'
-    -   tracks_dump_dir: where to dump the generated tracks
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--split", type=str, required=True, help="val or test")
-    parser.add_argument("--max_age", type=int, default=15,
-            help="max allowed track age since last measurement update")
-    parser.add_argument("--min_hits", type=int, default=5,
-        help="minimum number of required hits for track birth")
+    #path
+    split = 'val'
+    #path_dataset = "/media/sda1/argoverse-tracking"
+    # path_dataset = "../../Data/argoverse"
+    path_detections = f"/home/yellow/self-driving-cars-course/final/argoverse_detections_2020/validation"
+    path_data = f"/home/yellow/self-driving-cars-course/final/argoverse-tracking/val"
+    path_results = f"/home/yellow/self-driving-cars-course/final/argoverse_cbgs_kf_tracker/results/results_tracking_{split}_cbgs"
 
-    parser.add_argument("--dets_dataroot", type=str,
-        required=True, help="path to 3d detections")
+    min_conf = 0.3
+    #match_threshold = 10
+    match_distance = 'iou'
 
-    parser.add_argument("--pose_dir", type=str,
-        required=True, help="path to raw log data (including pose data) for validation or test set")
+    p_pos_mult, p_vel_mult = 1, 1
+    p = np.eye(10)
+    p[0:7,0:7] *= p_pos_mult
+    p[7:,7:] *= p_vel_mult
 
-    parser.add_argument("--tracks_dump_dir", type=str,
-        default='temp_files',
-        help="path to dump generated tracks (as .json files)")
-    parser.add_argument("--min_conf", type=float,
-        default=0.3,
-        help="minimum allowed confidence for 3d detections to be considered valid")
+    thr_prune = 0.01
 
-    args = parser.parse_args()
-    # tracks will be dumped into a subfolder of this name
-    save_dirname = f'{args.split}-split-track-preds'
-    save_dirname += f'-maxage{args.max_age}-minhits{args.min_hits}-conf{args.min_conf}'
-
-    if args.split == 'train':
-        args.dets_dataroot += '/training'
-    elif args.split == 'val':
-        args.dets_dataroot += '/validation'
-    elif args.split == 'test':
-        args.dets_dataroot += '/testing'
-
-    args.tracks_dump_dir = f'{args.tracks_dump_dir}/{save_dirname}'
+    thr_estimate = 0.5
+    ps = 0.875
 
     # Run tracker over vehicle detections separately from ped. detections
     for classname in ['VEHICLE', 'PEDESTRIAN']:
-        run_ab3dmot(
-            classname,
-            args.pose_dir,
-            args.dets_dataroot,
-            args.tracks_dump_dir,
-            max_age=args.max_age,
-            min_hits=args.min_hits,
-            min_conf=args.min_conf
-        )
+        if classname == 'VEHICLE':
+            match_threshold = 0.001
+            min_conf = 0.3
+            run_ab3dmot('VEHICLE', path_data, path_detections, path_results,
+                min_conf=min_conf,
+                match_algorithm ='h',
+                match_threshold = match_threshold,
+                match_distance = match_distance,
+                p = p,
+                thr_estimate = thr_estimate,
+                thr_prune=thr_prune,
+                ps = ps
+            )
+        if classname == 'PEDESTRIAN':
+            match_threshold = 0.001
+            min_conf = 0.26
+            run_ab3dmot('PEDESTRIAN', path_data, path_detections, path_results,
+                min_conf=min_conf,
+                match_algorithm ='h',
+                match_threshold = match_threshold,
+                match_distance = match_distance,
+                p = p,
+                thr_estimate = thr_estimate,
+                thr_prune=thr_prune,
+                ps = ps
+            )
