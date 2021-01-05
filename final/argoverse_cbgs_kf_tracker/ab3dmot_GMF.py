@@ -484,6 +484,7 @@ class KalmanBoxTracker(object):
     self.age = 0
     self.info = info        # other info
 
+    # KalmanBoxTracker init
     # Test new
     self.w = conf
     self.ps = ps
@@ -492,7 +493,7 @@ class KalmanBoxTracker(object):
     """
     Updates the state vector with observed bbox.
     """
-
+    #KalmanBoxTracker update
     self.w += conf
     if self.w > 1:
       self.w = 1
@@ -546,6 +547,7 @@ class KalmanBoxTracker(object):
 
     self.history.append(self.kf.x)
 
+    #KalmanBoxTracker predict
     # Multiply by p_s
     self.w *= self.ps
 
@@ -742,6 +744,7 @@ class AB3DMOT(object):
 
     i = len(self.trackers)
 
+    #AB3DMOT update
     for trk in reversed(self.trackers):
         d = trk.get_state()      # bbox location
 
@@ -756,4 +759,4 @@ class AB3DMOT(object):
     if(len(ret)>0):
       return np.concatenate(ret)      # x, y, z, theta, l, w, h, ID, other info, confidence
 
-    return np.empty((0,15))      
+    return np.empty((0,15))
